@@ -6,8 +6,26 @@
 #include <algorithm>
 #include <conio.h>
 #include <locale.h>
+#include <iomanip>
+#include <stdexcept>
 
-// Реализации Date
+using namespace std;
+
+int User::userCount = 0;
+const int Date::MIN_YEAR = 1900;
+
+namespace Encryption {
+    string hashPassword(const string& password) {
+        string hashed = password;
+        for (char& c : hashed) c ^= 0x55;
+        return hashed;
+    }
+
+    bool verifyPassword(const string& password, const string& hashedPassword) {
+        return hashPassword(password) == hashedPassword;
+    }
+}
+
 Date::Date(int d, int m, int y) : day(d), month(m), year(y) {}
 
 string Date::toString() const {
@@ -33,7 +51,11 @@ int Date::calculateExperience() const {
     return max(0, experience);
 }
 
-// Реализации KPI
+ostream& operator<<(ostream& os, const Date& date) {
+    os << date.day << "." << date.month << "." << date.year;
+    return os;
+}
+
 KPI::KPI(double pc, double cq, double tw, double in)
     : projectCompletion(pc), codeQuality(cq), teamwork(tw), innovation(in) {}
 
@@ -58,7 +80,6 @@ string KPI::toString() const {
         "Инновации: " + to_string((int)innovation) + "%";
 }
 
-// Реализации BonusFormula
 BonusFormula::BonusFormula(double kpiCoeff, double expCoeff, double maxExpBonus)
     : kpiCoefficient(kpiCoeff), experienceCoefficient(expCoeff), maxExperienceBonus(maxExpBonus) {}
 
@@ -108,11 +129,19 @@ BonusFormula BonusFormula::fromString(const string& str) {
     return BonusFormula();
 }
 
-// Реализации User
-User::User(string uname, string pwd, string name, string r, bool approved)
-    : username(uname), password(pwd), fullName(name), role(r), isApproved(approved) {}
+BonusFormula BonusFormula::getDefault() {
+    return BonusFormula();
+}
 
-User::~User() {}
+User::User(string uname, string pwd, string name, string r, bool approved)
+    : username(uname), fullName(name), role(r), isApproved(approved) {
+    setPassword(pwd);
+    userCount++;
+}
+
+User::~User() {
+    userCount--;
+}
 
 string User::getUsername() const { return username; }
 string User::getPassword() const { return password; }
@@ -121,16 +150,19 @@ string User::getRole() const { return role; }
 bool User::getIsApproved() const { return isApproved; }
 
 void User::setUsername(const string& uname) { username = uname; }
-void User::setPassword(const string& pwd) { password = pwd; }
+void User::setPassword(const string& pwd) { password = Encryption::hashPassword(pwd); }
 void User::setFullName(const string& name) { fullName = name; }
 void User::setRole(const string& r) { role = r; }
 void User::setIsApproved(bool approved) { isApproved = approved; }
 
 bool User::verifyPassword(const string& pwd) const {
-    return password == pwd;
+    return Encryption::verifyPassword(pwd, password);
 }
 
-// Реализации Employee
+int User::getUserCount() {
+    return userCount;
+}
+
 Employee::Employee(string uname, string pwd, string name,
     string dept, string pos, double sal, Date hire)
     : User(uname, pwd, name, "user", true), department(dept), position(pos),
@@ -213,7 +245,6 @@ void Employee::showMenu() {
     } while (choice != 0);
 }
 
-// Реализации Admin
 Admin::Admin(string uname, string pwd, string name)
     : User(uname, pwd, name, "admin", true) {}
 
@@ -223,7 +254,6 @@ string Admin::toFileString() const {
     return username + "," + password + "," + fullName + "," + role + ",1,2024-01-01";
 }
 
-// Реализации BonusSystem
 BonusSystem::BonusSystem(string filename, string formulaFilename)
     : dataFile(filename), formulaFile(formulaFilename) {
     createDefaultAdmin();
@@ -234,12 +264,10 @@ BonusSystem::BonusSystem(string filename, string formulaFilename)
 BonusSystem::~BonusSystem() {
     saveData();
     saveFormula();
-    for (auto user : users) delete user;
-    for (auto user : pendingRegistrations) delete user;
 }
 
 void BonusSystem::createDefaultAdmin() {
-    users.push_back(new Admin());
+    users.push_back(make_shared<Admin>());
 }
 
 void BonusSystem::loadFormula() {
@@ -297,7 +325,8 @@ void BonusSystem::loadData() {
                 continue;
             }
             else if (tokens.size() >= 10) {
-                Employee* emp = new Employee(username, password, fullName);
+                auto emp = make_shared<Employee>(username, "", fullName);
+                emp->setPassword(password);
                 emp->setIsApproved(approved);
                 emp->setDepartment(tokens[5]);
                 emp->setPosition(tokens[6]);
@@ -317,15 +346,15 @@ void BonusSystem::loadData() {
 
 void BonusSystem::saveData() {
     ofstream file(dataFile);
-    for (auto user : users) {
+    for (const auto& user : users) {
         file << user->toFileString() << endl;
     }
     file.close();
     cout << "Данные сохранены в файл." << endl;
 }
 
-User* BonusSystem::authenticate(const string& username, const string& password) {
-    for (auto user : users) {
+shared_ptr<User> BonusSystem::authenticate(const string& username, const string& password) {
+    for (const auto& user : users) {
         if (user->getUsername() == username && user->verifyPassword(password) && user->getIsApproved()) {
             return user;
         }
@@ -334,7 +363,7 @@ User* BonusSystem::authenticate(const string& username, const string& password) 
 }
 
 bool BonusSystem::usernameExists(const string& username) {
-    for (auto user : users) {
+    for (const auto& user : users) {
         if (user->getUsername() == username) return true;
     }
     return false;
@@ -381,7 +410,7 @@ void BonusSystem::registerUser() {
         if (isValidPosition(position)) break;
     }
 
-    Employee* emp = new Employee(username, password, fullName, department, position, 0, Date());
+    auto emp = make_shared<Employee>(username, password, fullName, department, position, 0, Date());
     emp->setIsApproved(false);
     pendingRegistrations.push_back(emp);
 
@@ -398,7 +427,7 @@ void BonusSystem::approveRegistration() {
     }
 
     for (size_t i = 0; i < pendingRegistrations.size(); i++) {
-        Employee* emp = dynamic_cast<Employee*>(pendingRegistrations[i]);
+        auto emp = dynamic_pointer_cast<Employee>(pendingRegistrations[i]);
         cout << i + 1 << ". " << emp->getFullName() << " - " << emp->getDepartment() << ", " << emp->getPosition() << endl;
     }
 
@@ -410,7 +439,7 @@ void BonusSystem::approveRegistration() {
         return;
     }
 
-    Employee* emp = dynamic_cast<Employee*>(pendingRegistrations[index - 1]);
+    auto emp = dynamic_pointer_cast<Employee>(pendingRegistrations[index - 1]);
     cout << "\nНастройка данных сотрудника: " << emp->getFullName() << endl;
 
     double salary = getDoubleInput("Зарплата: ", 0, 1000000);
@@ -547,7 +576,7 @@ void BonusSystem::addUser() {
         cout << "Пожалуйста, проверьте введенные значения KPI." << endl;
     }
 
-    Employee* emp = new Employee(username, password, fullName, department, position, salary, Date(day, month, year));
+    auto emp = make_shared<Employee>(username, password, fullName, department, position, salary, Date(day, month, year));
     emp->setKPI(KPI(pc, cq, tw, in));
     employees.push_back(emp);
     users.push_back(emp);
@@ -571,14 +600,13 @@ void BonusSystem::deleteUser() {
         return;
     }
 
-    Employee* emp = employees[index - 1];
+    auto emp = employees[index - 1];
     auto it = find(employees.begin(), employees.end(), emp);
     if (it != employees.end()) employees.erase(it);
 
     auto it2 = find(users.begin(), users.end(), emp);
     if (it2 != users.end()) users.erase(it2);
 
-    delete emp;
     saveData();
     cout << "Пользователь успешно удален!" << endl;
 }
@@ -627,9 +655,9 @@ void BonusSystem::searchUsers() {
     getline(cin, searchTerm);
 
     string searchTermLower = toLowerRussian(searchTerm);
-    vector<Employee*> results;
+    vector<shared_ptr<Employee>> results;
 
-    for (auto emp : employees) {
+    for (const auto& emp : employees) {
         bool match = false;
         string compareString;
 
@@ -684,28 +712,30 @@ void BonusSystem::sortUsers() {
         return;
     }
 
-    vector<Employee*> sortedEmployees = employees;
+    vector<shared_ptr<Employee>> sortedEmployees = employees;
 
     switch (choice) {
     case 1:
         sort(sortedEmployees.begin(), sortedEmployees.end(),
-            [](Employee* a, Employee* b) {
+            [](const shared_ptr<Employee>& a, const shared_ptr<Employee>& b) {
                 return toLowerRussian(a->getFullName()) < toLowerRussian(b->getFullName());
             });
         break;
     case 2:
         sort(sortedEmployees.begin(), sortedEmployees.end(),
-            [this](Employee* a, Employee* b) {
+            [this](const shared_ptr<Employee>& a, const shared_ptr<Employee>& b) {
                 return a->calculateBonus(formula) > b->calculateBonus(formula);
             });
         break;
     case 3:
         sort(sortedEmployees.begin(), sortedEmployees.end(),
-            [](Employee* a, Employee* b) { return a->getExperience() > b->getExperience(); });
+            [](const shared_ptr<Employee>& a, const shared_ptr<Employee>& b) {
+                return a->getExperience() > b->getExperience();
+            });
         break;
     case 4:
         sort(sortedEmployees.begin(), sortedEmployees.end(),
-            [](Employee* a, Employee* b) {
+            [](const shared_ptr<Employee>& a, const shared_ptr<Employee>& b) {
                 return toLowerRussian(a->getDepartment()) < toLowerRussian(b->getDepartment());
             });
         break;
@@ -713,7 +743,7 @@ void BonusSystem::sortUsers() {
 
     cout << "\nОтсортированный список:" << endl;
     for (size_t i = 0; i < sortedEmployees.size(); i++) {
-        Employee* emp = sortedEmployees[i];
+        auto emp = sortedEmployees[i];
         cout << i + 1 << ". " << emp->getFullName() << " - " << emp->getDepartment()
             << ", " << emp->getPosition() << " (Премия: " << emp->calculateBonus(formula)
             << " BYN, Стаж: " << emp->getExperience() << " лет)" << endl;
@@ -732,7 +762,7 @@ void BonusSystem::viewAllUsers() {
     drawTableLine();
 
     for (size_t i = 0; i < employees.size(); i++) {
-        Employee* emp = employees[i];
+        auto emp = employees[i];
         double bonus = emp->calculateBonus(formula);
         double kpi = emp->getKPI().getTotalKPI();
 
@@ -779,7 +809,7 @@ void BonusSystem::editEmployeeData() {
         return;
     }
 
-    Employee* emp = employees[index - 1];
+    auto emp = employees[index - 1];
 
     int choice;
     do {
@@ -900,7 +930,7 @@ void BonusSystem::calculateAndViewBonuses() {
     cout << "| ФИО                     | Зарплата | KPI  | Стаж | Премия  |" << endl;
     cout << "-------------------------------------------------------------" << endl;
 
-    for (auto emp : employees) {
+    for (const auto& emp : employees) {
         double bonus = emp->calculateBonus(formula);
         double kpi = emp->getKPI().getTotalKPI();
         int experience = emp->getExperience();
@@ -935,7 +965,7 @@ void BonusSystem::calculateAndViewBonuses() {
 
     cout << "\nРекомендации:" << endl;
     bool hasRecommendations = false;
-    for (auto emp : employees) {
+    for (const auto& emp : employees) {
         double kpi = emp->getKPI().getTotalKPI();
         if (kpi < 70) {
             cout << "• " << emp->getFullName() << ": низкий KPI (" << (int)kpi << "%). Рекомендуется повышение показателей." << endl;
@@ -987,7 +1017,7 @@ void BonusSystem::configureBonusFormula() {
             break;
         }
         case 3: {
-            cout << "\n-- Изменение максимального бонуса за стаж --" << endl;
+            cout << "\n-- Изменение максимального бонус за стаж --" << endl;
             cout << "Текущее значение: " << formula.getMaxExperienceBonus() << " (" << formula.getMaxExperienceBonus() * 100 << "%)" << endl;
 
             double newMax = getDoubleInput("\nВведите новый максимальный бонус (0.0 - 0.5): ", 0.0, 0.5);
@@ -1056,5 +1086,5 @@ void BonusSystem::displayAllEmployees() {
     viewAllUsers();
 }
 
-vector<Employee*>& BonusSystem::getEmployees() { return employees; }
-vector<User*>& BonusSystem::getPendingRegistrations() { return pendingRegistrations; }
+vector<shared_ptr<Employee>>& BonusSystem::getEmployees() { return employees; }
+vector<shared_ptr<User>>& BonusSystem::getPendingRegistrations() { return pendingRegistrations; }

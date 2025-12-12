@@ -1,6 +1,7 @@
 #include "menu.h"
 #include "input.h"
 #include <iostream>
+#include <memory>
 using namespace std;
 
 void manageAccountsMenu(BonusSystem& system) {
@@ -74,10 +75,11 @@ void adminMenu(BonusSystem& system) {
         cout << "3. Редактирование данных сотрудников" << endl;
         cout << "4. Расчет и анализ премий" << endl;
         cout << "5. Настройка формулы расчета премий" << endl;
+        cout << "6. Демонстрация возможностей C++" << endl;
         cout << "0. Выход" << endl;
         cout << "Выберите действие: ";
 
-        choice = getIntInput("", 0, 5);
+        choice = getIntInput("", 0, 6);
 
         switch (choice) {
         case 1:
@@ -95,6 +97,28 @@ void adminMenu(BonusSystem& system) {
         case 5:
             system.configureBonusFormula();
             break;
+        case 6: {
+            cout << "\n-- Демонстрация возможностей C++ --" << endl;
+
+            Repository<int> repo;
+            repo.add(100);
+            repo.add(200);
+            cout << "Шаблонный репозиторий: размер = " << repo.size() << endl;
+
+            auto testEmp = make_shared<Employee>("demo", "demo", "Демо Сотрудник");
+            cout << "Умный указатель: " << testEmp->getFullName() << endl;
+
+            cout << "Всего пользователей: " << User::getUserCount() << endl;
+
+            Date d(10, 10, 2020);
+            cout << "Перегрузка оператора << для Date: " << d << endl;
+
+            Employee emp("test", "test", "Тест");
+            printEmployeeInfo(emp);
+            cout << endl;
+
+            break;
+        }
         case 0:
             cout << "Выход из системы..." << endl;
             break;
@@ -122,14 +146,14 @@ void mainMenu(BonusSystem& system) {
             cout << "Пароль: ";
             password = system.getHiddenPassword();
 
-            User* user = system.authenticate(username, password);
+            auto user = system.authenticate(username, password);
             if (user) {
                 cout << "\nДобро пожаловать, " << user->getFullName() << "!" << endl;
                 if (user->getRole() == "admin") {
                     adminMenu(system);
                 }
                 else {
-                    Employee* emp = dynamic_cast<Employee*>(user);
+                    auto emp = dynamic_pointer_cast<Employee>(user);
                     if (emp) {
                         emp->showMenu();
                     }
